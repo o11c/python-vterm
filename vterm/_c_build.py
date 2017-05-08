@@ -205,6 +205,17 @@ typedef struct {
 } VTermParserCallbacks;
 ''')
 ffibuilder.cdef('''
+extern "Python" {
+  int cb_parser_text(const char *bytes, size_t len, void *user);
+  int cb_parser_control(unsigned char control, void *user);
+  int cb_parser_escape(const char *bytes, size_t len, void *user);
+  int cb_parser_csi(const char *leader, const long args[], int argcount, const char *intermed, char command, void *user);
+  int cb_parser_osc(const char *command, size_t cmdlen, void *user);
+  int cb_parser_dcs(const char *command, size_t cmdlen, void *user);
+  int cb_parser_resize(int rows, int cols, void *user);
+}
+''')
+ffibuilder.cdef('''
 void  vterm_parser_set_callbacks(VTerm *vt, const VTermParserCallbacks *callbacks, void *user);
 void *vterm_parser_get_cbdata(VTerm *vt);
 ''')
@@ -222,6 +233,21 @@ typedef struct {
   int (*resize)(int rows, int cols, VTermPos *delta, void *user);
   int (*setlineinfo)(int row, const VTermLineInfo *newinfo, const VTermLineInfo *oldinfo, void *user);
 } VTermStateCallbacks;
+''')
+ffibuilder.cdef('''
+extern "Python" {
+  int cb_state_putglyph(VTermGlyphInfo *info, VTermPos pos, void *user);
+  int cb_state_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user);
+  int cb_state_scrollrect(VTermRect rect, int downward, int rightward, void *user);
+  int cb_state_moverect(VTermRect dest, VTermRect src, void *user);
+  int cb_state_erase(VTermRect rect, int selective, void *user);
+  int cb_state_initpen(void *user);
+  int cb_state_setpenattr(VTermAttr attr, VTermValue *val, void *user);
+  int cb_state_settermprop(VTermProp prop, VTermValue *val, void *user);
+  int cb_state_bell(void *user);
+  int cb_state_resize(int rows, int cols, VTermPos *delta, void *user);
+  int cb_state_setlineinfo(int row, const VTermLineInfo *newinfo, const VTermLineInfo *oldinfo, void *user);
+}
 ''')
 ffibuilder.cdef('''
 VTermState *vterm_obtain_state(VTerm *vt);
@@ -275,6 +301,18 @@ typedef struct {
   int (*sb_pushline)(int cols, const VTermScreenCell *cells, void *user);
   int (*sb_popline)(int cols, VTermScreenCell *cells, void *user);
 } VTermScreenCallbacks;
+''')
+ffibuilder.cdef('''
+extern "Python" {
+  int cb_screen_damage(VTermRect rect, void *user);
+  int cb_screen_moverect(VTermRect dest, VTermRect src, void *user);
+  int cb_screen_movecursor(VTermPos pos, VTermPos oldpos, int visible, void *user);
+  int cb_screen_settermprop(VTermProp prop, VTermValue *val, void *user);
+  int cb_screen_bell(void *user);
+  int cb_screen_resize(int rows, int cols, void *user);
+  int cb_screen_sb_pushline(int cols, const VTermScreenCell *cells, void *user);
+  int cb_screen_sb_popline(int cols, VTermScreenCell *cells, void *user);
+}
 ''')
 ffibuilder.cdef('''
 VTermScreen *vterm_obtain_screen(VTerm *vt);
@@ -344,10 +382,21 @@ void vterm_scroll_rect(VTermRect rect,
                        void *user);
 ''')
 ffibuilder.cdef('''
+extern "Python" {
+                       int cb_scroll_rect_moverect(VTermRect src, VTermRect dest, void *user);
+                       int cb_scroll_rect_eraserect(VTermRect rect, int selective, void *user);
+}
+''')
+ffibuilder.cdef('''
 void vterm_copy_cells(VTermRect dest,
                       VTermRect src,
                       void (*copycell)(VTermPos dest, VTermPos src, void *user),
                       void *user);
+''')
+ffibuilder.cdef('''
+extern "Python" {
+                      void cb_copy_cells_copycell(VTermPos dest, VTermPos src, void *user);
+}
 ''')
 
 ffibuilder.set_source('vterm._c', '''

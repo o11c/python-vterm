@@ -1,6 +1,9 @@
 This directory contains an *unmodified* copy of the vterm headers,
 from the version that the python bindings were last modified for.
 
+Additional files are in `vterm/tests/`, slightly modified to fix bugs
+and avoid relying on internals.
+
 To update:
 
 * grab the new headers and replace them in this directory.

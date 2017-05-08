@@ -1,12 +1,16 @@
 from ._c import ffi
 from ._c.lib import *
 
-def _init_types():
+def _init():
     g = globals()
     for t in ffi.list_types()[0]:
         g[t] = ffi.typeof(t)
-_init_types()
-del _init_types
+    from .cb_except import restore_exception
+    for n, f in g.items():
+        if callable(f):
+            g[n] = restore_exception(f)
+_init()
+del _init
 
 def VTERM_KEY_FUNCTION(n):
     return VTERM_KEY_FUNCTION_0 + n
