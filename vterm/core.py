@@ -63,7 +63,7 @@ class VTerm:
     def __repr__(self):
         size = self.get_size()
         output = c.vterm_output_get_buffer_current(self._vt)
-        return '<VTerm size=%r output=%d>' % (size, output)
+        return '<%s size=%r output=%d>' % (type(self).__name__, size, output)
 
     def get_size(self):
         rowsp = c.ffi.new('int*')

@@ -1,4 +1,5 @@
+*.o
+/spawn-test
 __pycache__/
-vterm/_c.c
-vterm/_c.o
 vterm/_c.*.so
+vterm/_c.c

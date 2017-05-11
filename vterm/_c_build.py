@@ -398,10 +398,31 @@ extern "Python" {
                       void cb_copy_cells_copycell(VTermPos dest, VTermPos src, void *user);
 }
 ''')
+ffibuilder.cdef('''
+char *vterm_py_spawn_and_forget(char *cmd, char **argv, char **envp, int nfds, int *fds, int tty_fd);
+void free(void *ptr);
+''')
 
 ffibuilder.set_source('vterm._c', '''
 #include <vterm.h>
-''', libraries=['vterm'])
+#include "c-sources/spawn.h"
+''',
+    sources=['vterm/c-sources/spawn.c', 'vterm/c-sources/correct-strerror_r.c'],
+    include_dirs=None,
+    define_macros=None,
+    undef_macros=None,
+    library_dirs=None,
+    libraries=['vterm'],
+    runtime_library_dirs=None,
+    extra_objects=None,
+    extra_compile_args=None,
+    extra_link_args=None,
+    export_symbols=None,
+    swig_opts = None,
+    depends=None,
+    language=None,
+    optional=None,
+)
 
 if __name__ == '__main__':
     ffibuilder.compile(verbose=True)

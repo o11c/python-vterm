@@ -18,3 +18,21 @@ def make_enum(mod, name, search_mod, search_prefix, *, cls=Enum, extra=[], exclu
 
 
 make_flags = functools.partial(make_enum, cls=Flag)
+
+
+class Closing:
+    ''' Similar in purpose to contextlib.closing, but is a mixin class.
+    '''
+    __slots__ = ()
+    def __del__(self):
+        if not self.closed:
+            import warnings
+            warnings.warn('unclosed file %r' % self, ResourceWarning, stacklevel=2)
+            self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, ty, v, tb):
+        self.close()
+        assert self.closed
