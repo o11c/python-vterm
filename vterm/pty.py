@@ -1,5 +1,4 @@
 import os
-import sys
 
 from . import c, core, util
 
@@ -35,9 +34,27 @@ def _spawn(cmd, args, env=None, *, fds, tty=-1):
         raise OSError(c.ffi.string(error).decode('utf-8'))
 
 
+class PtyCallbacks(core.ScreenCallbacks):
+    def __init__(self, vt):
+        super().__init__(vt)
+        self.saved_cells = []
+
+    def sb_pushline(self, cells):
+        self.saved_cells.append(cells)
+        return 1
+
+    def sb_popline(self, cells_mut):
+        if not self.saved_cells:
+            return 0
+        old_cells = self.saved_cells.pop()
+        cells_len = min(len(old_cells), len(cells_mut))
+        cells_mut[:len(cells_len)] = old_cells[:cells_len]
+        return 1
+
+
 class VTermPty(core.VTerm, util.Closing):
-    __slots__ = ('_master_fd', '_slave_name')
-    def __init__(self, args, *, size=core.STANDARD_SIZE, cmd=None, env=None, __os_close=os.close):
+    __slots__ = ('_master_fd', '_slave_name', 'callbacks')
+    def __init__(self, args, *, size=core.STANDARD_SIZE, cmd=None, env=None, callbacks_cls=PtyCallbacks, __os_close=os.close, **kwargs):
         self._master_fd = -1
         super().__init__(size)
         master_fd, slave_fd = os.openpty()
@@ -51,6 +68,12 @@ class VTermPty(core.VTerm, util.Closing):
             __os_close(slave_fd)
             if master_fd != -1:
                 __os_close(master_fd)
+
+        # configure some sensible defaults
+        callbacks = callbacks_cls(self, **kwargs)
+        self.set_callbacks(callbacks)
+        self.callbacks = callbacks
+
     def __repr__(self):
         size = self.get_size()
         output = c.vterm_output_get_buffer_current(self._vt)

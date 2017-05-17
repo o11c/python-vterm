@@ -8,9 +8,13 @@ from . import c, cb_except, util
 
 def _read_str_exact(ctp, len_):
     # No point in using c.ffi.unpack(ctp, len_), since there's no char32_t support.
+    if False and len_ and ctp[0] == 0xFFffFFff:
+        return ''
     return ''.join([chr(ctp[i]) for i in range(len_)])
 def _read_str(ctp, *, max_len=float('inf')):
     # Can't use c.ffi.string(), since there's no char32_t support.
+    if max_len and ctp[0] == 0xFFffFFff:
+        return ''
     rv = []
     i = 0
     while i < max_len and ctp[i]:
@@ -60,6 +64,9 @@ class VTerm:
         self._state = c.vterm_obtain_state(self._vt)
         self._screen = c.vterm_obtain_screen(self._vt)
 
+        self.set_utf8(True)
+        self.reset(True)
+
     def __repr__(self):
         size = self.get_size()
         output = c.vterm_output_get_buffer_current(self._vt)
@@ -86,6 +93,8 @@ class VTerm:
 
     def output_read(self):
         len_ = c.vterm_output_get_buffer_current(self._vt)
+        if len_ == 0:
+            return b''
         buf = c.ffi.new('char[]', len_)
         rv = c.vterm_output_read(self._vt, buf, len_)
         return c.ffi.unpack(buf, rv)
@@ -326,10 +335,10 @@ class ScreenCell:
     chars = attr.ib(convert=lambda chs: _read_str(chs, max_len=6))
     width = attr.ib(convert=lambda b: b[0])
     attrs = attr.ib(convert=lambda ats: from_native(ats, cls=ScreenCell.Attrs))
-    fg = attr.ib()
-    bg = attr.ib()
+    fg = attr.ib(convert=lambda clr: from_native(clr, cls=Color))
+    bg = attr.ib(convert=fg.convert)
 
-    @attr.s(slots=True, frozen=True)
+    @attr.s(slots=True, frozen=True, repr=False)
     class Attrs:
         bold = attr.ib()
         underline = attr.ib()
@@ -340,6 +349,21 @@ class ScreenCell:
         font = attr.ib()
         dwl = attr.ib()
         dhl = attr.ib()
+
+        def __repr__(self):
+            bits = []
+            bits.append('<')
+            bits.append(type(self).__qualname__)
+            default = True
+            for a in self.__attrs_attrs__:
+                v = getattr(self, a.name)
+                if v:
+                    default = False
+                    bits.append(' %s=%s' % (a.name, v))
+            if default:
+                bits.append(' default')
+            bits.append('>')
+            return ''.join(bits)
 ScreenCell.c_type = 'VTermScreenCell*'
 ScreenCell.fields = ['chars', 'width', 'attrs', 'fg', 'bg']
 ScreenCell.Attrs.c_type = None
@@ -383,23 +407,19 @@ class ParserCallbacks(AbstractCallbacks):
     def resize(self, size):
         return 0
 
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_text(bytes_, len_, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.text(c.ffi.unpack(bytes_, len_))
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_control(control, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.control(control)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_escape(bytes_, len_, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.escape(c.ffi.unpack(bytes_, len_))
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_csi(leader, args, argcount, intermed, command, user):
     callbacks = c.ffi.from_handle(user)
     args2 = [None] * argcount
@@ -414,18 +434,15 @@ def cb_parser_csi(leader, args, argcount, intermed, command, user):
     leader = None if leader == c.ffi.NULL else c.ffi.string(leader)
     intermed = None if intermed == c.ffi.NULL else c.ffi.string(intermed)
     return callbacks.csi(leader, args2, intermed, command)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_osc(command, cmdlen, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.osc(c.ffi.unpack(command, cmdlen))
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_dcs(command, cmdlen, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.dcs(c.ffi.unpack(command, cmdlen))
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_parser_resize(rows, cols, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.resize(Size(rows=rows, cols=cols))
@@ -464,71 +481,60 @@ class StateCallbacks(AbstractCallbacks):
         return 0
 
 
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_putglyph(info, pos, user):
     callbacks = c.ffi.from_handle(user)
     info = from_native(info, cls=GlyphInfo)
     pos = from_native(pos, cls=Pos)
     return callbacks.putglyph(info, pos)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_movecursor(pos, oldpos, visible, user):
     callbacks = c.ffi.from_handle(user)
     pos = from_native(pos, cls=Pos)
     oldpos = from_native(oldpos, cls=Pos)
     return callbacks.movecursor(pos, oldpos, visible)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_scrollrect(rect, downward, rightward, user):
     callbacks = c.ffi.from_handle(user)
     rect = from_native(rect, cls=Rect)
     return callbacks.scrollrect(rect, downward, rightward)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_moverect(dest, src, user):
     callbacks = c.ffi.from_handle(user)
     dest = from_native(dest, cls=Rect)
     src = from_native(src, cls=Rect)
     return callbacks.moverect(dest, src)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_erase(rect, selective, user):
     callbacks = c.ffi.from_handle(user)
     rect = from_native(rect, cls=Rect)
     return callbacks.erase(rect, selective)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_initpen(user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.initpen()
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_setpenattr(attr, val, user):
     callbacks = c.ffi.from_handle(user)
     attr = from_native(attr, cls=Attr)
     val = from_native(val, attr=attr)
     return callbacks.setpenattr(attr, val)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_settermprop(prop, val, user):
     callbacks = c.ffi.from_handle(user)
     prop = from_native(prop, cls=Prop)
     val = from_native(val, prop=prop)
     return callbacks.settermprop(prop, val)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_bell(user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.bell()
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_resize(rows, cols, delta, user):
     callbacks = c.ffi.from_handle(user)
     # TODO - passing the native object
     return callbacks.resize(Size(rows=rows, cols=cols), delta)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_state_setlineinfo(row, newinfo, oldinfo, user):
     callbacks = c.ffi.from_handle(user)
     newinfo = from_native(newinfo, cls=LineInfo)
@@ -567,54 +573,46 @@ class ScreenCallbacks(AbstractCallbacks):
     def sb_popline(self, cells_mut):
         return 0
 
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_damage(rect, user):
     callbacks = c.ffi.from_handle(user)
     rect = from_native(rect, cls=Rect)
     return callbacks.damage(rect)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_moverect(dest, src, user):
     callbacks = c.ffi.from_handle(user)
     dest = from_native(dest, cls=Rect)
     src = from_native(src, cls=Rect)
     return callbacks.moverect(dest, src)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_movecursor(pos, oldpos, visible, user):
     callbacks = c.ffi.from_handle(user)
     pos = from_native(pos, cls=Pos)
     oldpos = from_native(oldpos, cls=Pos)
     return callbacks.movecursor(pos, oldpos, visible)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_settermprop(prop, val, user):
     callbacks = c.ffi.from_handle(user)
     prop = from_native(prop, cls=Prop)
     val = from_native(val, prop=prop)
     return callbacks.settermprop(prop, val)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_bell(user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.bell()
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_resize(rows, cols, user):
     callbacks = c.ffi.from_handle(user)
     return callbacks.resize(Size(rows=rows, cols=cols))
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_sb_pushline(cols, cells, user):
     callbacks = c.ffi.from_handle(user)
-    # TODO - passing the native object
-    return callbacks.sb_pushline(cells[0:cols])
-@c.ffi.def_extern()
-@cb_except.save_exception
+    # TODO - passing the native elements
+    return callbacks.sb_pushline(tuple(cells[0:cols]))
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_screen_sb_popline(cols, cells, user):
     callbacks = c.ffi.from_handle(user)
-    # TODO - passing the native object
+    # TODO - passing the native object and elements
     return callbacks.sb_popline(cells[0:cols])
 
 _g_screen_callbacks = c.ffi.new('VTermScreenCallbacks*')
@@ -628,20 +626,17 @@ _g_screen_callbacks.sb_pushline = c.cb_screen_sb_pushline.__wrapped__
 _g_screen_callbacks.sb_popline = c.cb_screen_sb_popline.__wrapped__
 
 
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_scroll_rect_moverect(src, dest, user):
     fn = c.ffi.from_handle(user)
     return fn(src, dest)
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_scroll_rect_eraserect(rect, selective, user):
     fn = c.ffi.from_handle(user)
     return fn(rect, selective)
 
 
-@c.ffi.def_extern()
-@cb_except.save_exception
+@c.ffi.def_extern(onerror=cb_except.onerror)
 def cb_copy_cells_copycell(dest, src, user):
     fn = c.ffi.from_handle(user)
     return fn(dest, src)
